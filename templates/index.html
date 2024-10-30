@@ -1,0 +1,220 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Analytical Machine Simulator</title>
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/monokai.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      .CodeMirror {
+        height: 300px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      .output-section {
+        height: 400px;
+        overflow-y: auto;
+      }
+      .memory-display {
+        font-family: monospace;
+      }
+      .error-message {
+        color: #dc3545;
+        font-weight: bold;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container-fluid py-4">
+      <h1 class="mb-4">Analytical Machine Simulator</h1>
+
+      <div class="row">
+        <div class="col-md-6">
+          <div class="card mb-4">
+            <div class="card-header">
+              <h5 class="card-title mb-0">Program Input</h5>
+            </div>
+            <div class="card-body">
+              <textarea id="code-editor" class="form-control">
+N 0 5    # Store 5 in V0
+N 1 3    # Store 3 in V1
++        # Set addition mode
+L 0      # Load V0 to E1
+L 1      # Load V1 to E2
+S 2      # Store result in V2
+P 2      # Print result</textarea
+              >
+              <button id="run-btn" class="btn btn-primary mt-3">
+                Run Program
+              </button>
+              <button id="clear-btn" class="btn btn-secondary mt-3 ms-2">
+                Clear Output
+              </button>
+            </div>
+          </div>
+          <div class="card mb-4">
+            <div class="card-header">
+              <h5 class="Memory Layout">
+                <h5 class="card-title mb-0">Memory Layout</h5>
+                0: I1' (first ingress prime)<br />
+                1: I1 (first ingress)<br />
+                2: I2 (second ingress)<br />
+                3: E' (egress prime)<br />
+                4: E (egress)<br />
+                5-14: V0-V9 (variables)<br />
+              </h5>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-md-6">
+          <div class="card mb-4">
+            <div class="card-header">
+              <h5 class="card-title mb-0">Program Output</h5>
+            </div>
+            <div class="card-body">
+              <div id="output" class="alert alert-secondary mb-3">
+                Output values will appear here...
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <h5 class="card-title mb-0">Execution Steps</h5>
+            </div>
+            <div class="card-body output-section">
+              <div id="debug-output"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+    <script>
+      // Initialize CodeMirror
+      var editor = CodeMirror.fromTextArea(
+        document.getElementById("code-editor"),
+        {
+          mode: "python",
+          theme: "monokai",
+          lineNumbers: true,
+          indentUnit: 4,
+          lineWrapping: true,
+        }
+      );
+
+      // Clear output
+      function clearOutput() {
+        document.getElementById("output").innerHTML =
+          "Output values will appear here...";
+        document.getElementById("debug-output").innerHTML = "";
+      }
+
+      document
+        .getElementById("clear-btn")
+        .addEventListener("click", clearOutput);
+
+      document.getElementById("run-btn").addEventListener("click", async () => {
+        const code = editor.getValue();
+        const runBtn = document.getElementById("run-btn");
+        const outputDiv = document.getElementById("output");
+        const debugOutput = document.getElementById("debug-output");
+
+        runBtn.disabled = true;
+        runBtn.innerHTML = "Running...";
+        outputDiv.innerHTML = "Running program...";
+        debugOutput.innerHTML = "";
+
+        try {
+          const response = await fetch("/run", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+            },
+            body: JSON.stringify({ code }),
+          });
+
+          const data = await response.json();
+
+          if (data.status === "success") {
+            if (data.result.output.length > 0) {
+              outputDiv.innerHTML = `<strong>Program Output:</strong><br>${data.result.output.join(
+                "<br>"
+              )}`;
+            } else {
+              outputDiv.innerHTML = "Program completed with no output.";
+            }
+
+            debugOutput.innerHTML = data.result.debug_info
+              .map(
+                (step) => `
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <strong>Step ${step.step}</strong> - Line ${
+                  step.line
+                }: ${step.instruction}
+                            </div>
+                            <div class="card-body">
+                                <p>Mode: ${step.mode} | Runup Lever: ${
+                  step.runup
+                }</p>
+                                <div class="memory-display">
+                                    <strong>Memory State:</strong><br>
+                                    I1': ${step.memory.slice(0, 1)}<br>
+                                    I1: ${step.memory.slice(1, 2)}<br>
+                                    I2: ${step.memory.slice(2, 3)}<br>
+                                    E': ${step.memory.slice(3, 4)}<br>
+                                    E: ${step.memory.slice(4, 5)}<br>
+                                    V0-V9: ${step.memory.slice(5).join(", ")}
+                                </div>
+                                ${
+                                  step.changes.length > 0
+                                    ? `
+                                    <div class="mt-2">
+                                        <strong>Changes:</strong><br>
+                                        ${step.changes
+                                          .map(
+                                            ([col, val]) =>
+                                              `Column ${col}: ${val}`
+                                          )
+                                          .join("<br>")}
+                                    </div>
+                                `
+                                    : ""
+                                }
+                            </div>
+                        </div>
+                    `
+              )
+              .join("");
+          } else {
+            outputDiv.innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
+            debugOutput.innerHTML = "";
+          }
+        } catch (error) {
+          outputDiv.innerHTML = `<div class="alert alert-danger">Error: ${error.message}</div>`;
+          debugOutput.innerHTML = "";
+        } finally {
+          runBtn.disabled = false;
+          runBtn.innerHTML = "Run Program";
+        }
+      });
+    </script>
+  </body>
+</html>
